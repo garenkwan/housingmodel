@@ -31,23 +31,10 @@ def get_estimate(projName, size, street=None):
     temp['date'] = temp['Date']-temp['Date'].min()
     temp['date'] = temp['date'].apply(lambda x: x.days+1)
     temp['street'] = street
-    smallDF = temp[['Date', 'psf', 'sqft', 'price', 'street']]
 
-    if temp['date'].max() > 1095:
-        minDate = temp['date'].max()-1095
-        lr = LinearRegression().fit(np.array(\
-        temp.loc[(temp['date'] > minDate), ['date', 'sqft']]),
-        temp.loc[(temp['date'] > minDate), 'psf'])
-    else:
-        lr = LinearRegression().fit(np.array(temp[['date', 'sqft']]), temp['psf'])
+    lr = lr_time(temp)
+    now, est_psf, r_square, rmse, min_psf, max_psf = metrics(lr, temp)
 
-    now = (datetime.now()-temp['Date'].min()).days
-    est_psf = lr.predict(np.array([now, size]).reshape(1,-1))[0]
-    r_square = lr.score(temp[['date', 'sqft']], temp['psf'])
-    rmse=np.sqrt(mse(lr.predict(temp[['date', 'sqft']]), temp['psf']))
-
-    min_psf = temp['psf'].min()
-    max_psf = temp['psf'].max()
     text = '{}\n\
         Estimated psf for {:.0f}sqft sized unit = ${:.0f} \n\
         Total price = ${:.0f}\n\
@@ -95,15 +82,13 @@ def extended_estimate(projName, size, extension='street', tuning=0.5, self_prop=
     if self_prop and tuning==0.5:
         incase = df.loc[df['project']== projName, features].copy()
         temp = pd.concat([temp, incase], sort=True).drop_duplicates().sort_values('Date')
+
     temp['date'] = temp['Date']-temp['Date'].min()
     temp['date'] = temp['date'].apply(lambda x: x.days+1)
-    lr = LinearRegression().fit(np.array(temp[['date', 'sqft']]), temp['psf'])
-    now = (datetime.now()-temp['Date'].min()).days
-    est_psf = lr.predict(np.array([now, size]).reshape(1,-1))[0]
-    r_square = lr.score(temp[['date', 'sqft']], temp['psf'])
-    rmse=np.sqrt(mse(lr.predict(temp[['date', 'sqft']]), temp['psf']))
-    min_psf = temp['psf'].min()
-    max_psf = temp['psf'].max()
+
+    lr = lr_time(temp)
+    now, est_psf, r_square, rmse, min_psf, max_psf = metrics(lr, temp)
+
     text = '{}\n\
         Estimated psf for {:.0f}sqft sized unit = ${:.0f}\n\
         Total price = ${:.0f}\n\
@@ -141,6 +126,30 @@ def loadData(path):
     df['sqft'] = df['sqft'].apply(int)
     df['drop_street_extension'] = df['street'].apply(lambda x: drop_street_extension(x))
     return df
+
+def lr_time(temp):
+    #lr of data taking time and sqft (only)
+    #fix to limit data to past 3 years
+    if temp['date'].max() > 1095:
+        minDate = temp['date'].max()-1095
+        lr = LinearRegression().fit(np.array(\
+        temp.loc[(temp['date'] > minDate), ['date', 'sqft']]),
+        temp.loc[(temp['date'] > minDate), 'psf'])
+    else:
+        lr = LinearRegression().fit(np.array(temp[['date', 'sqft']]), temp['psf'])
+
+    return lr
+
+def metrics(lr, temp):
+    global size
+    now = (datetime.now()-temp['Date'].min()).days
+    est_psf = lr.predict(np.array([now, size]).reshape(1,-1))[0]
+    r_square = lr.score(temp[['date', 'sqft']], temp['psf'])
+    rmse=np.sqrt(mse(lr.predict(temp[['date', 'sqft']]), temp['psf']))
+    min_psf = temp['psf'].min()
+    max_psf = temp['psf'].max()
+
+    return now, est_psf, r_square, rmse, min_psf, max_psf
 
 path = './data/PMI_Res_Transaction_w_STN.csv'
 df = loadData(path)
