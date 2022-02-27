@@ -1,0 +1,7 @@
+navigate into the property-spot-price-estimate folder
+
+git add .
+git commit -m "<YOUR COMMIT MESSAGE>"
+heroku login
+heroku git:remote -a <YOUR PROJECT NAME>
+git push heroku master
