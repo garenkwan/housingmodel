@@ -141,10 +141,7 @@ def lr_time(temp):
     return lr
 
 def metrics(lr, temp):
-<<<<<<< Updated upstream
     global size
-=======
->>>>>>> Stashed changes
     now = (datetime.now()-temp['Date'].min()).days
     est_psf = lr.predict(np.array([now, size]).reshape(1,-1))[0]
     r_square = lr.score(temp[['date', 'sqft']], temp['psf'])
