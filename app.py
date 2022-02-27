@@ -174,7 +174,7 @@ if extended:
 
 # Main display
 st.title('Quick price estimate')
-st.subheader('Data as at 26-Oct-21')
+st.subheader('Data as at 13-Feb-21')
 
 if project == '' or size == '':
     if (project == '' and size == '') or project == '':
