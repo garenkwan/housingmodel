@@ -10,6 +10,16 @@ from fuzzywuzzy import process
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error as mse
 
+def add_row(df, now, psf):
+    global size
+    df['Date'] = datetime.now()
+    df['psf'] = psf
+    df['date'] = now
+    df['sqft'] = size
+    df['price'] = round(size*psf, 0)
+    df.index = df.index+1
+    return df
+
 @st.cache(persist=True)
 def get_estimate(projName, size, street=None):
     '''
@@ -34,6 +44,8 @@ def get_estimate(projName, size, street=None):
 
     lr = lr_time(temp)
     now, est_psf, r_square, rmse, min_psf, max_psf = metrics(lr, temp)
+    new_row = add_row(temp.iloc[-1:].copy(), now, est_psf)
+    temp = pd.concat([temp, new_row])
 
     text = '{}\n\
         Estimated psf for {:.0f}sqft sized unit = ${:.0f} \n\
@@ -88,6 +100,8 @@ def extended_estimate(projName, size, extension='street', tuning=0.5, self_prop=
 
     lr = lr_time(temp)
     now, est_psf, r_square, rmse, min_psf, max_psf = metrics(lr, temp)
+    new_row = add_row(temp.iloc[-1:].copy(), now, est_psf)
+    temp = pd.concat([temp, new_row])
 
     text = '{}\n\
         Estimated psf for {:.0f}sqft sized unit = ${:.0f}\n\
