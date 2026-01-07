@@ -26,6 +26,23 @@ def load_model_and_artifacts(artifacts_dir: str):
 
     return model, project_details_df
 
+def get_condo_dropdown_values(artifacts_dir: str, full_data_path: str):
+    """
+    Reads necessary files to return unique values for dropdowns.
+
+    Args:
+        artifacts_dir: The directory where project_details.csv is saved.
+        full_data_path: Path to the complete transaction CSV file.
+
+    Returns:
+        A tuple of lists: (projects, floor_ranges)
+    """
+    details_path = os.path.join(artifacts_dir, 'project_details.csv')
+    project_details_df = pd.read_csv(details_path)
+    projects = sorted(project_details_df['project'].unique())
+    floor_ranges = ['-', '01-05', '06-10', '11-15', '16-20', '21-25', '26-30', '31-35', '36-40', '41-45', '46-50', '51-55', '56-60', '61-65', '66-70', '71-75', 'B1-B5']
+    return projects, floor_ranges
+
 def predict_price(model: xgb.XGBRegressor, project_details_df: pd.DataFrame, project: str, sqft: float, floorRange: str) -> float:
     """
     Predicts the price for a given property using a loaded XGBoost model.
@@ -90,14 +107,13 @@ def analyze_and_predict_trend(full_data_path: str, project: str, floorRange: str
         floorRange: The floor range to filter by.
         sqft: The square footage to base the trend analysis around.
         current_predicted_price: The price predicted for today by the XGBoost model.
+
+    Returns:
+        A tuple of (matplotlib.figure.Figure, float) or (None, None): The generated plot figure and the trend-based price for today, or None if analysis fails.
     """
     print("\n--- Historical Trend Analysis ---")
-    try:
-        df = pd.read_csv(full_data_path)
-        df['Date'] = pd.to_datetime(df['Date'])
-    except FileNotFoundError:
-        print(f"Error: The full data file was not found at '{full_data_path}'. Skipping trend analysis.")
-        return
+    df = pd.read_csv(full_data_path)
+    df['Date'] = pd.to_datetime(df['Date'])
 
     # Filter data for the specific project and floor range
     sqft_min, sqft_max = sqft - 50, sqft + 50
@@ -105,7 +121,7 @@ def analyze_and_predict_trend(full_data_path: str, project: str, floorRange: str
 
     if len(filtered_df) < 3:
         print(f"Insufficient historical data for '{project}' (floor range '{floorRange}', sqft {sqft_min}-{sqft_max}) to perform trend analysis (found {len(filtered_df)} records).")
-        return
+        return None, None
 
     # Prepare data for polynomial fitting
     filtered_df['date_ordinal'] = filtered_df['Date'].map(datetime.toordinal)
@@ -142,11 +158,14 @@ def analyze_and_predict_trend(full_data_path: str, project: str, floorRange: str
         best_degree == -1
 
     today = datetime.now()
+    today_poly_price = None
+
     if best_degree == -1:
         print("Could not determine a suitable trend line for the historical data.")
     else:
         print(f"Found best-fit polynomial of degree: {best_degree}")
         best_fit_poly = np.poly1d(np.polyfit(x, y, best_degree))
+        today_poly_price = best_fit_poly(today.toordinal())
 
         # Predict prices for future dates
         future_dates = {
@@ -163,8 +182,8 @@ def analyze_and_predict_trend(full_data_path: str, project: str, floorRange: str
             print(f"  - In {label} ({future_date.strftime('%Y-%m-%d')}): ${predicted_price:,.2f}")
 
     # --- Plotting ---
+    fig, ax = plt.subplots(figsize=(14, 8))
     plt.style.use('seaborn-v0_8-whitegrid')
-    plt.figure(figsize=(14, 8))
 
     # Plot historical data
     plt.scatter(filtered_df['Date'], filtered_df['price'], label='Historical Transactions', color='skyblue', alpha=0.8, edgecolors='b')
@@ -185,6 +204,9 @@ def analyze_and_predict_trend(full_data_path: str, project: str, floorRange: str
     # Plot the current XGBoost prediction
     plt.scatter([today], [current_predicted_price], label=f'Current XGBoost Prediction: ${current_predicted_price:,.0f}', color='green', s=150, zorder=5, marker='*')
 
+    if today_poly_price:
+        plt.scatter([today], [today_poly_price], label=f'Today\'s Trend-Based Price: ${today_poly_price:,.0f}', color='orange', s=150, zorder=5, marker='D')
+
     if best_degree != -1:
         # Plot future projections
         future_plot_dates = list(future_dates.values())
@@ -196,7 +218,8 @@ def analyze_and_predict_trend(full_data_path: str, project: str, floorRange: str
     plt.ylabel("Price ($)", fontsize=12)
     plt.legend(fontsize=10)
     plt.tight_layout()
-    plt.show()
+    
+    return fig, today_poly_price
 
 if __name__ == '__main__':
     # Set up argument parser to accept user inputs from the command line
@@ -221,4 +244,8 @@ if __name__ == '__main__':
 
     # 3. Perform trend analysis
     full_data_file = 'data/PMI_Res_Transactions_20251230.csv'
-    analyze_and_predict_trend(full_data_file, args.project, args.floor_range, args.sqft, price)
+    fig, today_trend_price = analyze_and_predict_trend(full_data_file, args.project, args.floor_range, args.sqft, price)
+    if fig:
+        if today_trend_price:
+            print(f"Today's Trend-Based Price Estimate: ${today_trend_price:,.2f}")
+        plt.show()

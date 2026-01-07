@@ -8,6 +8,23 @@ import argparse
 from dateutil.relativedelta import relativedelta
 import matplotlib.pyplot as plt
 
+def get_hdb_dropdown_values(data_path: str):
+    """
+    Reads the HDB data file and returns unique values for dropdowns.
+
+    Args:
+        data_path (str): Path to the full resale data CSV.
+
+    Returns:
+        A tuple of lists: (towns, flat_types, storey_ranges)
+    """
+    df = pd.read_csv(data_path)
+    towns = sorted(df['town'].unique())
+    flat_types = sorted(df['flat_type'].unique())
+    storey_ranges = sorted(df['storey_range'].unique())
+    return towns, flat_types, storey_ranges
+
+
 def predict_resale_price(town: str, flat_type: str, block: str, street_name: str,
                          storey_range: str, floor_area_sqm: float,
                          model_path: str, data_path: str):
@@ -93,17 +110,16 @@ def analyze_and_predict_hdb_trend(full_data_path: str, town: str, street_name: s
         storey_range: The storey range to filter by.
         floor_area_sqm: The floor area to base the trend analysis around.
         current_predicted_price: The price predicted for today by the XGBoost model.
+
+    Returns:
+        A tuple of (matplotlib.figure.Figure, float) or (None, None): The generated plot figure and the trend-based price for today, or None if analysis fails.
     """
     print("\n--- Historical Trend Analysis ---")
-    try:
-        df = pd.read_csv(full_data_path)
-        df['date'] = pd.to_datetime(df['month'], format='%Y-%m')
-    except FileNotFoundError:
-        print(f"Error: The full data file was not found at '{full_data_path}'. Skipping trend analysis.")
-        return
+    df = pd.read_csv(full_data_path)
+    df['date'] = pd.to_datetime(df['month'], format='%Y-%m')
 
     # Filter data for similar flats
-    area_min, area_max = floor_area_sqm - 5, floor_area_sqm + 5
+    area_min, area_max = floor_area_sqm - 10, floor_area_sqm + 10
     filtered_df = df[
         (df['town'] == town) &
         (df['street_name'] == street_name) &
@@ -114,7 +130,7 @@ def analyze_and_predict_hdb_trend(full_data_path: str, town: str, street_name: s
 
     if len(filtered_df) < 3:
         print(f"Insufficient historical data for similar flats to perform trend analysis (found {len(filtered_df)} records).")
-        return
+        return None, None
 
     # Prepare data for polynomial fitting
     filtered_df['date_ordinal'] = filtered_df['date'].map(datetime.toordinal)
@@ -125,16 +141,19 @@ def analyze_and_predict_hdb_trend(full_data_path: str, town: str, street_name: s
     degree = 2
     if len(filtered_df) <= degree:
         print("Not enough data points to fit a trend line.")
-        return
+        return None, None
 
     try:
         best_fit_poly = np.poly1d(np.polyfit(x, y, degree))
         print(f"Fitted a polynomial trend line of degree: {degree}")
     except Exception as e:
         print(f"Could not fit a trend line due to an error: {e}")
-        return
+        return None, None
 
     today = datetime.now()
+    today_ordinal = today.toordinal()
+    today_poly_price = best_fit_poly(today_ordinal)
+
     # Predict prices for future dates
     future_dates = {
         "3 months": today + relativedelta(months=3),
@@ -149,8 +168,8 @@ def analyze_and_predict_hdb_trend(full_data_path: str, town: str, street_name: s
         print(f"  - In {label} ({future_date.strftime('%Y-%m-%d')}): ${predicted_price:,.2f}")
 
     # --- Plotting ---
+    fig, ax = plt.subplots(figsize=(14, 8))
     plt.style.use('seaborn-v0_8-whitegrid')
-    plt.figure(figsize=(14, 8))
 
     # Plot historical data
     plt.scatter(filtered_df['date'], filtered_df['resale_price'], label='Historical Transactions', color='skyblue', alpha=0.8, edgecolors='b')
@@ -170,6 +189,9 @@ def analyze_and_predict_hdb_trend(full_data_path: str, town: str, street_name: s
     # Plot the current XGBoost prediction
     plt.scatter([today], [current_predicted_price], label=f'Current XGBoost Prediction: ${current_predicted_price:,.0f}', color='green', s=150, zorder=5, marker='*')
 
+    # Plot the polynomial prediction for today
+    plt.scatter([today], [today_poly_price], label=f'Today\'s Trend-Based Price: ${today_poly_price:,.0f}', color='orange', s=150, zorder=5, marker='D')
+
     # Plot future projections
     future_plot_dates = list(future_dates.values())
     future_plot_prices = [best_fit_poly(d.toordinal()) for d in future_plot_dates]
@@ -184,7 +206,8 @@ def analyze_and_predict_hdb_trend(full_data_path: str, town: str, street_name: s
     plt.ylabel("Resale Price ($)", fontsize=12)
     plt.legend(fontsize=10)
     plt.tight_layout()
-    plt.show()
+    
+    return fig, today_poly_price
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Predict HDB Resale Price.')
@@ -214,12 +237,16 @@ if __name__ == '__main__':
         print(f"\nPredicted Resale Price: ${prediction:,.2f}")
 
         # Perform trend analysis
-        analyze_and_predict_hdb_trend(full_data_path=data_file,
-                                      town=args.town,
-                                      street_name=args.street_name,
-                                      flat_type=args.flat_type,
-                                      storey_range=args.storey_range,
-                                      floor_area_sqm=args.floor_area_sqm,
-                                      current_predicted_price=prediction)
+        fig, today_trend_price = analyze_and_predict_hdb_trend(full_data_path=data_file,
+                                                                town=args.town,
+                                                                street_name=args.street_name,
+                                                                flat_type=args.flat_type,
+                                                                storey_range=args.storey_range,
+                                                                floor_area_sqm=args.floor_area_sqm,
+                                                                current_predicted_price=prediction)
+        if fig:
+            if today_trend_price:
+                print(f"Today's Trend-Based Price Estimate: ${today_trend_price:,.2f}")
+            plt.show()
     except (ValueError, FileNotFoundError) as e:
         print(f"\nError: {e}")
