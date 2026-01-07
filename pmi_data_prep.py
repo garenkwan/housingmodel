@@ -1,10 +1,10 @@
-import json, os, shapefile, threading
+import json, os, threading
 import geopy.distance
 import pandas as pd
 
 from datetime import datetime
 from numpy import nan
-from svy21 import SVY21
+from SVY21 import SVY21
 from tqdm import tqdm
 
 '''
@@ -54,24 +54,25 @@ def get_df(files):
 def get_json(file,list_of_jsons):
     print(datetime.now(), ':\t', 'Working on', file,'\n')
     df = pd.DataFrame()
-    with open(file, 'r') as f:
-        read_file = json.load(f)
+    with open(file, 'rb') as f:
+        json_string = f.read().decode('utf-8', errors='replace')
+        read_file = json.loads(json_string)
         for entry in read_file['Result']:
             temp = pd.DataFrame(entry['transaction'])
             temp['street'] = entry['street']
             temp['project'] = entry['project']
             temp['marketSegment'] = entry['marketSegment']
-            if 'x' in entry.keys():
+            if 'x' in entry:
                 temp['x'] = entry['x']
             else:
                 temp['x'] = nan
-            if 'y' in entry.keys():
+            if 'y' in entry:
                 temp['y'] = entry['y']
             else:
                 temp['y'] = nan
             df = pd.concat([df, temp], sort=True)
     list_of_jsons.append(df)
-    print(datetime.now(), ':\t', file,'completed.\n')
+    print(datetime.now(), ':\t', file, 'completed.\n')
     return df
 
 def get_latest_data(directory='./jsons/'):
@@ -108,8 +109,12 @@ def cleanTenure(string, street):
             return 999
         else:
             return 1000
-    else:
+    elif string == "999 years leasehold":
+        return 999
+    elif " yrs lease commencing from " in string:
         return int(string.split(' yrs lease commencing from ')[0])
+    else:
+        return int(string.split(' years lease commencing from ')[0])
     
 def dateCleaner(date):
     date = str(date)
@@ -195,8 +200,12 @@ def startYear(string, street):
             return 1883
         else:
             return 1000
-    else:
+    elif string == "999 years leasehold":
+        return 1000
+    elif " yrs lease commencing from " in string:
         return int(string.split(' yrs lease commencing from ')[1])
+    else:
+        return int(string.split(' years lease commencing from ')[1])
                 
                 
 ########################
